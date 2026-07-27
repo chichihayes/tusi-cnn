@@ -61,9 +61,9 @@ notebooks/walkthrough.ipynb  The full story, pre-executed with embedded results
 README.md, requirements.txt
 ```
 
-No file lives outside a folder that explains its purpose. Nothing here needs
-downloading — the committed `dataset/` folders in each pipeline are the actual,
-small (a few MB), already-cropped images the results below were produced from.
+Nothing here needs downloading — the committed `dataset/` folders in each
+pipeline are the actual, small (a few MB), already-cropped images the results
+below were produced from.
 
 ## Results
 
