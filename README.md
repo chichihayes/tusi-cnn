@@ -88,18 +88,5 @@ results or re-run training. If you want to rebuild the crops from scratch:
 - **Kvasir-SEG**: [official download](https://datasets.simula.no/kvasir-seg/) → extract to `kvasir_data/Kvasir-SEG/`
 - **HyperKvasir normal images**: [official download](https://datasets.simula.no/hyper-kvasir/), labeled-images subset only (`anatomical-landmarks/cecum` + `anatomical-landmarks/retroflex-rectum`) → `kvasir_data/hyperkvasir_normal/` → `python organize_kvasir_dataset.py`
 
-## Honest limitations
-
-- Single run per condition, no repeated seeds or cross-validation.
-- No validation split — model selection uses the last epoch, not a
-  validation-selected best epoch (deliberate, to avoid test-set leakage).
-- Mammography's centroid-based crop centering hasn't been stress-tested for
-  jitter sensitivity.
-- No naive-downsampling baseline yet at a matched pixel budget, to properly
-  isolate whether Tusi's efficiency comes from its geometric reorganization
-  specifically or just from using fewer pixels.
-- No literature search yet confirming whether this exact harmonic sampling
-  construction has prior art.
-
 See `notebooks/walkthrough.ipynb` for the full narrative, including the bugs
 we caught and fixed along the way.
