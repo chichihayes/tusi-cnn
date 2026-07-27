@@ -56,6 +56,11 @@ polyp/                       Polyp pipeline (Kvasir-SEG + HyperKvasir, polyp vs.
 ├── explore_architectures.py Exploratory Tusi-only architecture variants
 ├── evaluate.py               Compute metrics, produce plots
 ├── dataset/{train,test}/{normal,polyp}/       The actual crops used (committed)
+├── dataset_signal/{train,test}/{normal,polyp}/   Every crop above, pre-transformed
+│                              through TusiRadialFilter and saved — the literal,
+│                              pixel-for-pixel input the Tusi models trained on
+│                              (normally computed live in memory, materialized
+│                              here for inspection; see core/build_tusi_signal_dataset.py)
 └── results/                  Trained models, metrics, plots
     └── exploratory/{signal,aware}/   2D circular-pad + 1D signal variant results
 
