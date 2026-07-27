@@ -98,21 +98,33 @@ core/                   Shared code both pipelines import from
   training.py              BRANCHES, get_device(), run_epoch() — shared training loop
   evaluation.py            load_history/model, collect_predictions, compute_metrics,
                            plot_training_curves, plot_roc_curves — shared eval/plots
+  augmentation.py          AngleRollAugment — training-time augmentation (random roll
+                           along the circular angle axis) for the exploratory scripts
+                           ONLY; not used by tusi_filter.py and does not affect how the
+                           Tusi map itself is generated, only how it's perturbed during
+                           training for the two exploratory architectures below.
 
 mammography/            CBIS-DDSM pipeline (malignant vs. benign)
   organize_dataset.py     One-time prep from raw CBIS-DDSM (already run)
   train.py                 build_datasets() + run_training() + main(); imports core.*
   evaluate.py               Thin wrapper around core.evaluation
-  explore_architectures.py  Exploratory Tusi-only variants (TusiAwareCNN/TusiSignalCNN)
+  explore_architectures.py  Exploratory Tusi-only variants (TusiAwareCNN/TusiSignalCNN);
+                           filename quirk: saved metrics are `tusi_aware_metrics.json`
+                           (no `_cnn`) but `tusi_signal_cnn_metrics.json` (has `_cnn`) —
+                           inconsistent naming from before the restructure, left as-is.
   dataset/{train,test}/{benign,malignant}/   912 crops, committed (4.5MB)
-  results/                  baseline/tusi model+history+metrics+plots;
-                           results/exploratory/ has the tusi_aware/tusi_signal results
+  results/                  baseline/tusi model+history+metrics+plots
+  results/exploratory/      tusi_aware_* and tusi_signal_cnn_* (see filename quirk above)
 
 polyp/                  Kvasir-SEG + HyperKvasir pipeline (polyp vs. normal)
   organize_dataset.py      One-time prep from raw Kvasir-SEG/HyperKvasir (already run)
   train.py, evaluate.py     Same shape as mammography's
+  explore_architectures.py  Same idea as mammography's, but ImageFolder-based data
+                           loading (like polyp/train.py) instead of CBISDDSMDataset
   dataset/{train,test}/{normal,polyp}/       2400 crops, committed (23MB)
   results/                  baseline/tusi model+history+metrics+plots
+  results/exploratory/aware/    tusi_aware_cnn_* (run with --out-dir explicitly)
+  results/exploratory/signal/   tusi_signal_cnn_* (run with --out-dir explicitly)
 
 tusi_filtered_examples/  All demo/example images, ONE folder, consistently named
                          (mammography_*, polyp_*) — no scattered sample_images/tusi_demo
@@ -198,7 +210,7 @@ the medical-ambiguity confound. Caveat this is *not* malignant/benign classifica
 ### Polyp experiment — result (concluded)
 
 Baseline vs. Tusi, both `TusiCompatibleCNN`, 20 epochs, identical hyperparameters,
-run on the crop-size-corrected `organized_kvasir/` (see above — first version had a
+run on the crop-size-corrected `polyp/dataset/` (see above — first version had a
 crop-too-small bug, fixed before this run):
 
 | Model | Accuracy | ROC-AUC | Sensitivity | F1 |
@@ -216,16 +228,59 @@ decisive, more positive result than mammography's near-total tie. Training curve
 for both, unlike mammography's flat plateau — Tusi's train loss drops even lower
 than baseline's.
 
-### GitHub repo (done)
+### Exploratory architecture results — polyp (concluded, new finding)
 
-Public, at https://github.com/chichihayes/tusi-cnn. Contains all code, both
-pipelines' committed datasets/results, and the pre-executed
+Ran both exploratory architectures (2D circular-pad, 1D signal) on the polyp
+data too, matching what was already done for mammography. Full 40-epoch runs,
+same augmentation recipe (`core/augmentation.py`'s `AngleRollAugment`).
+
+| Domain | Architecture | Accuracy | ROC-AUC | Sensitivity | F1 |
+|---|---|---|---|---|---|
+| Mammography | 2D circular-pad | 0.577 | 0.632 | 0.388 | 0.422 |
+| Mammography | 1D signal | 0.617 | 0.615 | 0.350 | 0.421 |
+| Polyp | 2D circular-pad | 0.667 | **0.981** | **0.995** | 0.713 |
+| Polyp | 1D signal | **0.908** | 0.970 | 0.835 | **0.884** |
+
+**Key new finding**: on polyp, the **1D signal CNN is the best result of any
+architecture tested in this whole project** (plain shared CNN, 2D circular-pad,
+or 1D signal; baseline or Tusi) — 0.908 accuracy, 0.884 F1. This is a reversal
+from mammography, where the signal approach was the *weakest* of the three
+Tusi variants. Interpretation: a polyp is a genuine physical bump with a real,
+consistent boundary — exactly the clean geometric structure the signal
+architecture (per-angle 1D feature extraction + circular cross-angle
+combination) is built to exploit. Mammography's spiculation pattern is far
+less consistent (real counterexamples found earlier: benign-but-spiky,
+malignant-but-smooth), so the same architectural advantage doesn't show up
+there — reinforces that mammography's ceiling is a *data* problem, not
+something a better architecture fixes, while polyp's cleaner ground truth lets
+architecture choice actually matter.
+
+The 2D circular-pad model's split result (highest AUC of anything tested,
+0.981, but low accuracy 0.667) is a calibration artifact, not a bad model —
+it's biased toward predicting "polyp" (99.5% sensitivity), so accuracy suffers
+at the default 0.5 threshold even though the underlying ranking/discrimination
+is excellent. Worth knowing if this gets revisited: a better decision threshold
+(not 0.5) or class-balanced loss would likely fix the accuracy/F1 numbers
+without hurting the AUC.
+
+README and notebook both updated with this table and interpretation.
+
+### GitHub repo
+
+**Currently PRIVATE** (changed from public per explicit user request — "make
+public after research paper"). At https://github.com/chichihayes/tusi-cnn.
+To make public again: `gh repo edit chichihayes/tusi-cnn --visibility public
+--accept-visibility-change-consequences`. Do NOT change visibility without the
+user explicitly asking — this is a deliberate, stated decision, not a default.
+
+Contains all code, both pipelines' committed datasets/results (including the
+new polyp exploratory results above), and the pre-executed
 `notebooks/walkthrough.ipynb`. The "Honest limitations" section was deliberately
 removed from both the notebook and README per user request (kept in this
-CLAUDE.md file only, below, since that's project memory, not public-facing docs).
-Repo was restructured (see above) after the initial push specifically so a
-professor or new visitor could understand the layout and run any part of it
-without confusion — verified end-to-end after the restructure (both
+CLAUDE.md file only, since that's project memory, not public-facing docs).
+Repo was restructured after the initial push specifically so a professor or
+new visitor could understand the layout and run any part of it without
+confusion — verified end-to-end after the restructure (both
 `mammography/evaluate.py` and `polyp/evaluate.py` rerun successfully, identical
 metrics to before the restructure).
 
@@ -253,7 +308,11 @@ running. Options the user hasn't yet chosen between:
    "log-polar coordinate neural network", "Fourier radial descriptor deep
    learning") to position this work relative to existing polar-transform CNNs.
 6. Something else (pretrained transfer learning on mammography baseline to
-   approach published 0.84-0.89 AUC; polyp task with exploratory architectures;
-   more polyp data; etc.)
+   approach published 0.84-0.89 AUC; more polyp data; calibrate the polyp 2D
+   circular-pad model's decision threshold since its AUC is excellent but
+   accuracy isn't; etc.)
+
+(Item "polyp task with exploratory architectures" from earlier versions of
+this list is now DONE — see the exploratory results section above.)
 
 Ask the user before picking a direction — do not assume.

@@ -1,21 +1,26 @@
-"""Exploratory: how well can a Tusi-tailored architecture do, on its own?
+"""Exploratory: how well can a Tusi-tailored architecture do, on its own,
+on the polyp data?
 
 This is deliberately outside the controlled baseline-vs-Tusi comparison in
-``mammography/train.py`` / ``mammography/evaluate.py`` — it only runs the
-Tusi branch, with a model (``tusi_aware_cnn`` or ``tusi_signal_cnn``, see
+``polyp/train.py`` / ``polyp/evaluate.py`` — it only runs the Tusi branch,
+with a model (``tusi_aware_cnn`` or ``tusi_signal_cnn``, see
 ``core/models.py``) and training recipe (circular angle-axis augmentation,
 weight decay, more epochs) that only make sense for Tusi input. It answers
 a different question than the main experiment: not "does Tusi beat raw
 pixels under identical conditions," but "what's the upside if we lean into
 Tusi's structure specifically." Results here are not directly comparable
-to ``mammography/results/metrics.json`` as a fair A/B test — they're a
-ceiling estimate for the Tusi representation. Results are written to
-``mammography/results/exploratory/`` to keep them clearly separate from
-the fair comparison's results.
+to ``polyp/results/metrics.json`` as a fair A/B test — they're a ceiling
+estimate for the Tusi representation. Results are written to
+``polyp/results/exploratory/`` to keep them clearly separate from the fair
+comparison's results.
+
+Mirrors ``mammography/explore_architectures.py`` exactly except for the
+dataset loading (plain ``ImageFolder`` here, same as ``polyp/train.py``,
+rather than ``CBISDDSMDataset``).
 
 Run from the repo root:
 
-    python mammography/explore_architectures.py --architecture tusi_signal_cnn
+    python polyp/explore_architectures.py --architecture tusi_signal_cnn
 """
 
 import argparse
@@ -27,11 +32,12 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from torchvision import datasets
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.augmentation import AngleRollAugment
-from core.dataset import CBISDDSMDataset, tusi_transform
+from core.dataset import tusi_transform
 from core.evaluation import collect_predictions, compute_metrics
 from core.models import create_model
 from core.training import get_device, run_epoch
@@ -68,9 +74,10 @@ def main() -> None:
     device = get_device()
     logger.info("device=%s", device)
 
-    train_ds = CBISDDSMDataset(root_dir=args.root_dir, split="train", transform=tusi_transform())
+    transform = tusi_transform()
+    train_ds = datasets.ImageFolder(root=str(Path(args.root_dir) / "train"), transform=transform)
     train_ds = AngleRollAugment(train_ds, max_shift=args.max_angle_shift)
-    test_ds = CBISDDSMDataset(root_dir=args.root_dir, split="test", transform=tusi_transform())
+    test_ds = datasets.ImageFolder(root=str(Path(args.root_dir) / "test"), transform=transform)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
@@ -107,7 +114,7 @@ def main() -> None:
     print(f"\n=== {args.architecture} test metrics ===")
     print(f"accuracy={metrics['accuracy']:.3f} roc_auc={metrics['roc_auc']:.3f} "
           f"sensitivity={metrics['sensitivity']:.3f} f1={metrics['f1']:.3f}")
-    print("\n(compare against mammography/results/metrics.json's 'tusi' entry — "
+    print("\n(compare against polyp/results/metrics.json's 'tusi' entry — "
           "same data, plain shared-backbone CNN, no augmentation)")
 
 

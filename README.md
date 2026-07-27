@@ -38,7 +38,8 @@ core/                        Shared code both pipelines depend on
 ├── models.py                TusiCompatibleCNN + exploratory architectures
 ├── dataset.py                Synthetic dataset + shared transforms
 ├── training.py               Shared training-loop primitives
-└── evaluation.py             Shared metrics + plotting
+├── evaluation.py             Shared metrics + plotting
+└── augmentation.py           Shared augmentation for exploratory scripts
 
 mammography/                 Mammography pipeline (CBIS-DDSM, malignant vs. benign)
 ├── organize_dataset.py      One-time crop preprocessing (already run — see dataset/)
@@ -47,13 +48,16 @@ mammography/                 Mammography pipeline (CBIS-DDSM, malignant vs. beni
 ├── explore_architectures.py Exploratory Tusi-only architecture variants
 ├── dataset/{train,test}/{benign,malignant}/   The actual crops used (committed)
 └── results/                  Trained models, metrics, plots
+    └── exploratory/           2D circular-pad + 1D signal variant results
 
 polyp/                       Polyp pipeline (Kvasir-SEG + HyperKvasir, polyp vs. normal)
 ├── organize_dataset.py      One-time crop preprocessing (already run — see dataset/)
 ├── train.py                 Train baseline + Tusi branches
+├── explore_architectures.py Exploratory Tusi-only architecture variants
 ├── evaluate.py               Compute metrics, produce plots
 ├── dataset/{train,test}/{normal,polyp}/       The actual crops used (committed)
 └── results/                  Trained models, metrics, plots
+    └── exploratory/{signal,aware}/   2D circular-pad + 1D signal variant results
 
 tusi_filtered_examples/      Every example image used in the walkthrough, one
                               folder, consistently named (mammography_*, polyp_*)
@@ -88,6 +92,47 @@ both models score far higher there. Full explanation, with concrete examples
 of the appearance-vs-biopsy divergence and the crop-size bug we caught and
 fixed mid-project, is in the notebook.
 
+## Exploratory architectures
+
+The controlled comparison above always uses the identical `TusiCompatibleCNN`
+for both branches (needed to isolate the representation as the only variable).
+Separately, `explore_architectures.py` (in each pipeline) tests two
+Tusi-only architectures that lean into the transform's actual structure —
+not a fair A/B test, a ceiling estimate for how much the representation can
+give if the model is built around it:
+
+- **2D circular-pad CNN**: a regular 2D CNN, but the angle axis is padded
+  circularly instead of with zeros, since angle 0 and angle N-1 are actually
+  adjacent sweeps, not unrelated edges.
+- **1D signal CNN**: treats each angle's row as its own independent 1D
+  signal (a `Conv1d` per angle, weight-shared across angles), then combines
+  the per-angle features across the (circular) angle axis in a second stage
+  — rather than sliding a 2D kernel over the whole grid at once.
+
+| Domain | Architecture | Accuracy | ROC-AUC | Sensitivity | F1 |
+|---|---|---|---|---|---|
+| Mammography | 2D circular-pad | 0.577 | 0.632 | 0.388 | 0.422 |
+| Mammography | 1D signal | 0.617 | 0.615 | 0.350 | 0.421 |
+| Polyp | 2D circular-pad | 0.667 | **0.981** | **0.995** | 0.713 |
+| Polyp | 1D signal | **0.908** | 0.970 | 0.835 | **0.884** |
+
+**Read**: on mammography, neither exploratory architecture beat the plain
+shared CNN — architecture tweaks didn't move the needle, reinforcing that
+mammography's ceiling is a data problem, not a model problem (see the
+notebook). On polyp, the picture is different and more interesting:
+
+- The **1D signal CNN clearly wins** across the board here — it's the best
+  polyp result of any architecture tested, plain or exploratory. This is a
+  reversal from mammography, where the signal approach was the weakest
+  variant — consistent with a polyp being a genuine physical bump (the kind
+  of clean, consistent boundary geometry the signal architecture is built to
+  exploit), unlike mammography's inconsistent spiculation.
+- The **2D circular-pad model has the highest AUC of anything tested**
+  (0.981) but low accuracy (0.667) — it's calling almost everything "polyp"
+  (99.5% sensitivity). The high AUC says the underlying discrimination is
+  genuinely excellent; the low accuracy is a calibration problem at the
+  default 0.5 threshold, not evidence the model is bad.
+
 ## Quickstart
 
 ```bash
@@ -109,6 +154,13 @@ python polyp/evaluate.py
 ```
 (Each script also works run from inside its own folder, e.g.
 `cd mammography && python train.py`.)
+
+**To re-run the exploratory architectures** (Tusi-only, see below):
+```bash
+python mammography/explore_architectures.py --architecture tusi_signal_cnn
+python polyp/explore_architectures.py --architecture tusi_signal_cnn --out-dir polyp/results/exploratory/signal
+python polyp/explore_architectures.py --architecture tusi_aware_cnn --out-dir polyp/results/exploratory/aware
+```
 
 ## Reproducing from raw data (optional)
 
