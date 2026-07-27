@@ -17,9 +17,15 @@ rolling inside a larger one traces a diameter via `x(phi) = R*cos(phi)`. Stack
 the results into an `(N, D)` grid (angle × radius) and feed that to a CNN
 instead of the raw image.
 
+**Mammography** — original crop next to its Tusi-filtered version:
+
 | Original crop | Tusi-filtered |
 |---|---|
 | ![original](tusi_filtered_examples/mammography_tusi_transform_step1_original_crop.png) | ![filtered](tusi_filtered_examples/mammography_tusi_transform_step3_filtered_output.png) |
+
+**Polyp** — same idea, other domain (original crop on the left, Tusi-filtered on the right, combined in one image):
+
+![polyp original vs Tusi-filtered](tusi_filtered_examples/polyp_tusi_transform_example_01_polyp.png)
 
 ## Repo structure
 
