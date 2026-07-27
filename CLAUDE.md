@@ -81,79 +81,78 @@ Keep the code modular — one concern per file, all under a flat top-level packa
 
 ## Status
 
-Full pipeline built, tested, and run end-to-end on real data. Currently running a
-**second** experiment (polyp detection) to test the core Tusi hypothesis on a
-cleaner, less ambiguous task. Read this whole section before doing anything else.
+Full pipeline built, tested, both experiments concluded, **repo restructured for
+clarity and pushed to GitHub**: https://github.com/chichihayes/tusi-cnn (public).
+Read this whole section before doing anything else — the flat single-folder layout
+described earlier in this file is **out of date**; the actual structure is below.
 
-### Files that exist and what they do
+### Current repo structure (as pushed to GitHub)
 
-Core 5 (per architecture above), all written and working:
-- `dataset.py` — `SyntheticLumpDataset` (synthetic, still works), `CBISDDSMDataset`
-  (thin `ImageFolder` wrapper over `organized/`), `default_transform()` (baseline:
-  resize+grayscale→3ch+normalize), `tusi_transform()` (baseline transform +
-  `TusiRadialFilter` + 3ch replication).
-- `tusi_filter.py` — `TusiRadialFilter(n_angles=48, n_radial=112)`, vectorized via
-  `F.grid_sample`, batched/GPU-capable. Verified against a manual reference
-  implementation.
-- `models.py` — `TusiCompatibleCNN` (the shared backbone used for the fair
-  baseline-vs-Tusi comparison; ~390K params, works on both input shapes via
-  `AdaptiveAvgPool2d`). Also `TusiAwareCNN` (2D, circular-padded angle axis) and
-  `TusiSignalCNN` (1D-signal, per-angle `Conv1d` + circular cross-angle
-  aggregation) — both **exploratory only**, not part of the fair comparison.
-- `train.py` — `run_training(branch, ...)` shared by both branches;
-  `BRANCHES = ("baseline", "tusi")`; saves to `runs/`.
-- `evaluate.py` — accuracy/ROC-AUC/sensitivity/F1 + training-curve and ROC plots;
-  reads `runs/`.
+```
+core/                   Shared code both pipelines import from
+  tusi_filter.py         TusiRadialFilter (n_angles=48, n_radial=112, F.grid_sample-based)
+  models.py               TusiCompatibleCNN (shared backbone, ~390K params) +
+                           TusiAwareCNN / TusiSignalCNN (exploratory only)
+  dataset.py               SyntheticLumpDataset, CBISDDSMDataset, default_transform(),
+                           tusi_transform()
+  training.py              BRANCHES, get_device(), run_epoch() — shared training loop
+  evaluation.py            load_history/model, collect_predictions, compute_metrics,
+                           plot_training_curves, plot_roc_curves — shared eval/plots
 
-Extra (built during exploration, not in the original 5-file spec):
-- `organize_dataset.py` — **one-time prep script**, run before `dataset.py`'s
-  `CBISDDSMDataset` works. Reads raw CBIS-DDSM CSVs, resolves the Kaggle mirror's
-  broken `.dcm`→`.jpg` paths (see its docstring — join on `PatientID` + role from
-  `dicom_info.csv`, NOT the series-UID folder name, which doesn't reliably match),
-  crops each MLO-view mass lesion around its mask centroid, writes
-  `organized/{train,test}/{benign,malignant}/*.jpg`. Mask is used only to find the
-  crop center — never saved, never seen again after that.
-- `explore_tusi_architecture.py` — trains `TusiAwareCNN` or `TusiSignalCNN`
-  (`--architecture` flag) with circular angle-roll augmentation, more epochs, weight
-  decay. Tusi-only, not a fair comparison, just testing the representation's ceiling.
-- `organize_kvasir_dataset.py`, `train_kvasir.py`, `evaluate_kvasir.py` — the new
-  polyp experiment, see below.
+mammography/            CBIS-DDSM pipeline (malignant vs. benign)
+  organize_dataset.py     One-time prep from raw CBIS-DDSM (already run)
+  train.py                 build_datasets() + run_training() + main(); imports core.*
+  evaluate.py               Thin wrapper around core.evaluation
+  explore_architectures.py  Exploratory Tusi-only variants (TusiAwareCNN/TusiSignalCNN)
+  dataset/{train,test}/{benign,malignant}/   912 crops, committed (4.5MB)
+  results/                  baseline/tusi model+history+metrics+plots;
+                           results/exploratory/ has the tusi_aware/tusi_signal results
 
-### Data on disk
+polyp/                  Kvasir-SEG + HyperKvasir pipeline (polyp vs. normal)
+  organize_dataset.py      One-time prep from raw Kvasir-SEG/HyperKvasir (already run)
+  train.py, evaluate.py     Same shape as mammography's
+  dataset/{train,test}/{normal,polyp}/       2400 crops, committed (23MB)
+  results/                  baseline/tusi model+history+metrics+plots
 
-- `data/` — extracted CBIS-DDSM (from `archive (4).zip`, 5.3GB, kept in project root).
-- `organized/{train,test}/{benign,malignant}/` — 912 MLO-mass crops (711 train / 201
-  test), built by `organize_dataset.py`. **This is what `train.py` actually reads.**
-- `kvasir_data/Kvasir-SEG/{images,masks}/` — extracted from `kvasir-seg.zip` (46MB,
-  in project root). 1000 polyp images + matching masks.
-- `kvasir_data/hyperkvasir_normal/` — 1400 normal-tissue images (`cecum` +
-  `retroflex-rectum` only — deliberately lower-GI to match where the polyps are;
-  do NOT add `pylorus`, that's upper-GI/stomach and would let a model shortcut on
-  organ type instead of polyp-vs-not). Selectively extracted from
-  `C:\Users\HP\Downloads\hyper-kvasir-labeled-images.zip` (3.9GB, NOT copied into
-  the project — too big, re-extract selectively from Downloads if needed again).
-- `organized_kvasir/{train,test}/{normal,polyp}/` — 2400 crops (1920 train / 480
-  test) built by `organize_kvasir_dataset.py`. **v2 / fixed version**: crop box
-  size is now adaptive (mask bounding box x 1.6 margin, then resized down to
-  224x224) instead of a fixed 224px window. The first version used a fixed
-  224px crop and had a real bug — verified 20.3% of polyp crops were entirely
-  filled by the polyp (no boundary visible) and 46.4% were cut off at the edge,
-  same class of bug as the mammography pipeline's original fixed-crop issue.
-  After the fix: 0% entirely filled, 79.9% show the full polyp with clean
-  boundary, only 20.1% still cut off (only when polyp+margin exceeds the source
-  image's own resolution — unavoidable). Normal crops draw their box size from
-  the *same distribution* as the polyp crops' sizes (not a fixed size), and are
-  centered on a random point in visible tissue (not image-center) — both
-  deliberate, to prevent the model from learning a positional/scale shortcut
-  instead of real tissue content. If `organized_kvasir/` needs rebuilding, just
-  rerun `python organize_kvasir_dataset.py` — it's fast (~1min).
-- `runs/` — mammography experiment artifacts (models, histories, metrics.json,
-  plots) for `baseline`, `tusi`, plus exploratory `tusi_aware_cnn` and
-  `tusi_signal_cnn` variants.
-- `runs_kvasir/` — polyp experiment artifacts, same shape as `runs/`. **Done,
-  concluded** — see result below.
-- `sample_images/` and `tusi_demo/` — kept-on-purpose visualizations (mask
-  centroid/crop verification, Tusi transform walkthrough images), not scratch.
+tusi_filtered_examples/  All demo/example images, ONE folder, consistently named
+                         (mammography_*, polyp_*) — no scattered sample_images/tusi_demo
+notebooks/walkthrough.ipynb   Full narrated walkthrough, PRE-EXECUTED (outputs embedded,
+                         renders on GitHub with no setup). Reads from ../mammography/
+                         and ../polyp/, not old organized/ or runs/ paths.
+```
+
+**Import pattern**: every pipeline script (`mammography/train.py`,
+`polyp/evaluate.py`, etc.) does `sys.path.insert(0, str(Path(__file__).resolve().parent.parent))`
+then `from core.dataset import ...` etc. — works whether run as
+`python mammography/train.py` from repo root OR `cd mammography && python train.py`.
+Verified both ways.
+
+**What got deleted** (superseded, do not look for these — they no longer exist):
+the old flat top-level `dataset.py`, `models.py`, `tusi_filter.py`, `train.py`,
+`evaluate.py`, `train_kvasir.py`, `evaluate_kvasir.py`, `organize_dataset.py`,
+`organize_kvasir_dataset.py`, `explore_tusi_architecture.py`, and the old
+`organized/`, `organized_kvasir/`, `runs/`, `runs_kvasir/`, `sample_images/`,
+`tusi_demo/` folders. `GEMINI_PROMPT.md` was also removed (was a one-off prompt
+for an external AI, not project documentation).
+
+### Raw data on disk (local only, gitignored, NOT in the GitHub repo)
+
+- `data/` — extracted CBIS-DDSM (from `archive (4).zip`, 5.3GB, local project root).
+- `kvasir_data/Kvasir-SEG/{images,masks}/` — extracted Kvasir-SEG (from
+  `kvasir-seg.zip`, 46MB, local project root).
+- `kvasir_data/hyperkvasir_normal/` — 1400 normal images (`cecum` +
+  `retroflex-rectum` only — deliberately lower-GI, NOT `pylorus` which is
+  upper-GI/stomach and would let a model shortcut on organ type). Selectively
+  extracted from `C:\Users\HP\Downloads\hyper-kvasir-labeled-images.zip` (3.9GB,
+  never copied into the project).
+
+None of the above is needed to use the repo — `mammography/dataset/` and
+`polyp/dataset/` (the actual small processed crops) are committed to GitHub
+directly. Raw data is only needed if regenerating crops from scratch via the
+`organize_dataset.py` scripts (which now default to `<pipeline>/raw_data/` as
+the expected raw-data location — the local `data/`/`kvasir_data/` folders at
+repo root are NOT where those scripts look by default anymore; pass `--raw-dir`
+explicitly if regenerating from the existing local raw-data folders).
 
 ### Mammography experiment — result (concluded)
 
@@ -213,22 +212,48 @@ reliably matches ground truth (no biopsy divergence), absolute performance jumps
 lot for both representations. Tusi wins 3 of 4 metrics (accuracy, sensitivity, F1);
 baseline has a narrow AUC edge, but both AUCs are excellent. This is a more
 decisive, more positive result than mammography's near-total tie. Training curves
-(`runs_kvasir/training_curves.png`) show real learning (steadily decreasing loss)
+(`polyp/results/training_curves.png`) show real learning (steadily decreasing loss)
 for both, unlike mammography's flat plateau — Tusi's train loss drops even lower
 than baseline's.
+
+### GitHub repo (done)
+
+Public, at https://github.com/chichihayes/tusi-cnn. Contains all code, both
+pipelines' committed datasets/results, and the pre-executed
+`notebooks/walkthrough.ipynb`. The "Honest limitations" section was deliberately
+removed from both the notebook and README per user request (kept in this
+CLAUDE.md file only, below, since that's project memory, not public-facing docs).
+Repo was restructured (see above) after the initial push specifically so a
+professor or new visitor could understand the layout and run any part of it
+without confusion — verified end-to-end after the restructure (both
+`mammography/evaluate.py` and `polyp/evaluate.py` rerun successfully, identical
+metrics to before the restructure).
 
 ### Immediate next step for a new session
 
 Both experiments (mammography, polyp) are concluded and their results are recorded
-above. Nothing is currently running. Options the user hasn't yet chosen between:
+above, and the repo is live on GitHub with a clean structure. Nothing is currently
+running. Options the user hasn't yet chosen between:
 1. Center-jitter sensitivity test on the mammography pipeline (still not done —
    perturb the mask-derived crop center by a few pixels, see if Tusi's predictions
    collapse; distinguishes "representation doesn't help" from "centering/
    interpolation is the real problem").
 2. LIDC-IDRI spiculation-rating task (predict the radiologist's own perception
    rating, not diagnosis — cleaner isolation of the core geometric hypothesis).
-3. Something else (try pretrained transfer learning on mammography baseline to
-   approach published 0.84-0.89 AUC; try the polyp task with the exploratory
-   architectures; extend polyp experiment with more data; etc.)
+3. 5-fold cross-validation on the polyp dataset (for confidence intervals — note:
+   needs a proper paired statistical test like DeLong's for AUC comparison, not
+   just naive std-dev across folds; also needs real code changes since the
+   current pipeline builds one fixed split, not folds).
+4. A naive-downsampling baseline (e.g. raw image resized to ~73x73, matching
+   Tusi's ~5,376-value pixel budget) to isolate whether Tusi's efficiency comes
+   from its specific geometric reorganization or just fewer pixels in general —
+   run as a genuine test, not a foregone conclusion (polyps are coarse/large
+   features that may survive naive downsampling better than expected).
+5. Literature search for prior art ("polar transform CNN medical imaging",
+   "log-polar coordinate neural network", "Fourier radial descriptor deep
+   learning") to position this work relative to existing polar-transform CNNs.
+6. Something else (pretrained transfer learning on mammography baseline to
+   approach published 0.84-0.89 AUC; polyp task with exploratory architectures;
+   more polyp data; etc.)
 
 Ask the user before picking a direction — do not assume.

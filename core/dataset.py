@@ -1,20 +1,19 @@
-"""Dataset loading and preprocessing for the Tusi-Couple mammography experiment.
+"""Shared dataset loading/preprocessing, used by both the mammography and
+polyp pipelines.
 
 Provides a synthetic dataset (dense circular lumps with/without radiating
-spicules) for fast pipeline iteration, and a real dataset built from the
-CBIS-DDSM mass subset. Both return ``(image_tensor, label)`` pairs with
-label 1 = malignant, 0 = benign, so ``train.py`` can consume either without
-caring which is in use.
+spicules) for fast pipeline iteration, and :func:`default_transform` /
+:func:`tusi_transform` — the two transforms that turn a class-organized
+folder of image crops into ``(image_tensor, label)`` pairs, with or without
+the Tusi radial filter applied. ``mammography/train.py`` and
+``polyp/train.py`` both build their datasets around
+``torchvision.datasets.ImageFolder`` using these same two transforms, so
+the only difference between a "baseline" and a "Tusi" run, in either
+pipeline, is which transform was used.
 
-The real dataset expects the class-organized layout produced by
-``organize_dataset.py`` (run once beforehand):
-
-    <root_dir>/{train,test}/{benign,malignant}/<name>.jpg
-
-Cropping each lesion around its mask centroid and sorting it by class is
-done once by that script rather than on every load — see its module
-docstring for why (CSV joins + full-mammogram loads are expensive to repeat
-every epoch).
+:class:`CBISDDSMDataset` is a thin `ImageFolder` wrapper originally written
+for the mammography pipeline; kept here since it's generic infrastructure
+(nothing mammography-specific beyond its docstring/name).
 """
 
 import logging
@@ -27,7 +26,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
-from tusi_filter import TusiRadialFilter
+from core.tusi_filter import TusiRadialFilter
 
 logger = logging.getLogger(__name__)
 

@@ -1,35 +1,45 @@
-"""Training loop, shared between the baseline and Tusi-filtered branches.
+"""Mammography training loop — baseline vs. Tusi-filtered, CBIS-DDSM.
 
 Both branches run through the exact same :func:`run_training` function —
 only the ``branch`` argument differs, which selects the input transform
-(:func:`dataset.default_transform` vs. :func:`dataset.tusi_transform`) and,
-correspondingly, the expected input shape. Same optimizer, learning rate,
-epoch count, loss function, batch size, and (via seeding) the same initial
-model weights for both runs, so any difference in outcome traces back to
-the input representation, not incidental training differences.
+(:func:`core.dataset.default_transform` vs.
+:func:`core.dataset.tusi_transform`) and, correspondingly, the expected
+input shape. Same optimizer, learning rate, epoch count, loss function,
+batch size, and (via seeding) the same initial model weights for both runs,
+so any difference in outcome traces back to the input representation, not
+incidental training differences.
+
+Run from the repo root:
+
+    python mammography/train.py --epochs 20
+
+Reads its dataset from ``mammography/dataset/`` (already built — see
+``mammography/organize_dataset.py`` if it ever needs regenerating from raw
+CBIS-DDSM) and writes results to ``mammography/results/``.
 """
 
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
 
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from dataset import CBISDDSMDataset, default_transform, tusi_transform
-from models import create_model
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.dataset import CBISDDSMDataset, default_transform, tusi_transform
+from core.models import create_model
+from core.training import BRANCHES, get_device, run_epoch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-BRANCHES = ("baseline", "tusi")
-
-
-def get_device() -> torch.device:
-    """Return the CUDA device if available, else CPU."""
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+THIS_DIR = Path(__file__).resolve().parent
+DEFAULT_ROOT_DIR = THIS_DIR / "dataset"
+DEFAULT_OUT_DIR = THIS_DIR / "results"
 
 
 def build_datasets(branch: str, root_dir: str) -> tuple[CBISDDSMDataset, CBISDDSMDataset]:
@@ -49,56 +59,9 @@ def build_datasets(branch: str, root_dir: str) -> tuple[CBISDDSMDataset, CBISDDS
     return train_ds, test_ds
 
 
-def run_epoch(
-    model: nn.Module,
-    loader: DataLoader,
-    loss_fn: nn.Module,
-    device: torch.device,
-    optimizer: torch.optim.Optimizer | None = None,
-) -> tuple[float, float]:
-    """Run one pass over ``loader``, training if ``optimizer`` is given.
-
-    Args:
-        model: the model to run.
-        loader: batches of ``(image, label)``.
-        loss_fn: loss function (expects raw logits and float labels).
-        device: device to run on.
-        optimizer: if given, the model is put in train mode and weights are
-            updated; if ``None``, the model is evaluated in eval mode with
-            no gradient updates.
-
-    Returns:
-        ``(average_loss, accuracy)`` over the whole loader.
-    """
-    model.train(mode=optimizer is not None)
-    total_loss, num_correct, num_samples = 0.0, 0, 0
-
-    context = torch.enable_grad() if optimizer is not None else torch.no_grad()
-    with context:
-        for images, labels in loader:
-            images = images.to(device)
-            labels = labels.to(device).float()
-
-            logits = model(images)
-            loss = loss_fn(logits, labels)
-
-            if optimizer is not None:
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-            batch_size = labels.size(0)
-            total_loss += loss.item() * batch_size
-            preds = (torch.sigmoid(logits) > 0.5).float()
-            num_correct += (preds == labels).sum().item()
-            num_samples += batch_size
-
-    return total_loss / num_samples, num_correct / num_samples
-
-
 def run_training(
     branch: str,
-    root_dir: str = "organized",
+    root_dir: str = str(DEFAULT_ROOT_DIR),
     epochs: int = 20,
     batch_size: int = 16,
     lr: float = 1e-3,
@@ -143,23 +106,12 @@ def run_training(
 
         logger.info(
             "[%s] epoch %d/%d train_loss=%.4f train_acc=%.4f test_loss=%.4f test_acc=%.4f",
-            branch,
-            epoch,
-            epochs,
-            train_loss,
-            train_acc,
-            test_loss,
-            test_acc,
+            branch, epoch, epochs, train_loss, train_acc, test_loss, test_acc,
         )
-        history.append(
-            {
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "train_acc": train_acc,
-                "test_loss": test_loss,
-                "test_acc": test_acc,
-            }
-        )
+        history.append({
+            "epoch": epoch, "train_loss": train_loss, "train_acc": train_acc,
+            "test_loss": test_loss, "test_acc": test_acc,
+        })
 
     return model, history
 
@@ -167,8 +119,8 @@ def run_training(
 def main() -> None:
     """CLI entry point: train both branches with identical hyperparameters."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root-dir", default="organized")
-    parser.add_argument("--out-dir", default="runs")
+    parser.add_argument("--root-dir", default=str(DEFAULT_ROOT_DIR))
+    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -176,16 +128,12 @@ def main() -> None:
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for branch in BRANCHES:
         model, history = run_training(
-            branch,
-            root_dir=args.root_dir,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            seed=args.seed,
+            branch, root_dir=args.root_dir, epochs=args.epochs,
+            batch_size=args.batch_size, lr=args.lr, seed=args.seed,
         )
         torch.save(model.state_dict(), out_dir / f"{branch}_model.pt")
         with open(out_dir / f"{branch}_history.json", "w", encoding="utf-8") as f:

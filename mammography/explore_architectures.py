@@ -1,33 +1,46 @@
 """Exploratory: how well can a Tusi-tailored architecture do, on its own?
 
 This is deliberately outside the controlled baseline-vs-Tusi comparison in
-``train.py`` / ``evaluate.py`` — it only runs the Tusi branch, with a model
-(``tusi_aware_cnn`` or ``tusi_signal_cnn``, see ``models.py``) and training
-recipe (circular angle-axis augmentation, weight decay, more epochs) that
-only make sense for Tusi input. It answers a different question than the
-main experiment: not "does Tusi beat raw pixels under identical
-conditions," but "what's the upside if we lean into Tusi's structure
-specifically." Results here are not directly comparable to
-``runs/metrics.json`` as a fair A/B test — they're a ceiling estimate for
-the Tusi representation.
+``mammography/train.py`` / ``mammography/evaluate.py`` — it only runs the
+Tusi branch, with a model (``tusi_aware_cnn`` or ``tusi_signal_cnn``, see
+``core/models.py``) and training recipe (circular angle-axis augmentation,
+weight decay, more epochs) that only make sense for Tusi input. It answers
+a different question than the main experiment: not "does Tusi beat raw
+pixels under identical conditions," but "what's the upside if we lean into
+Tusi's structure specifically." Results here are not directly comparable
+to ``mammography/results/metrics.json`` as a fair A/B test — they're a
+ceiling estimate for the Tusi representation. Results are written to
+``mammography/results/exploratory/`` to keep them clearly separate from
+the fair comparison's results.
+
+Run from the repo root:
+
+    python mammography/explore_architectures.py --architecture tusi_signal_cnn
 """
 
 import argparse
 import json
 import logging
 import random
+import sys
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from dataset import CBISDDSMDataset, tusi_transform
-from evaluate import collect_predictions, compute_metrics
-from models import create_model
-from train import get_device, run_epoch
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.dataset import CBISDDSMDataset, tusi_transform
+from core.evaluation import collect_predictions, compute_metrics
+from core.models import create_model
+from core.training import get_device, run_epoch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+THIS_DIR = Path(__file__).resolve().parent
+DEFAULT_ROOT_DIR = THIS_DIR / "dataset"
+DEFAULT_OUT_DIR = THIS_DIR / "results" / "exploratory"
 
 
 class AngleRollAugment(Dataset):
@@ -36,7 +49,7 @@ class AngleRollAugment(Dataset):
     A circular roll of the angle axis is equivalent to re-starting the
     Tusi sweep from a different angle — a label-preserving augmentation
     that only makes sense because that axis is circular (see
-    :class:`models.TusiAwareCNN`'s docstring). This has no baseline
+    :class:`core.models.TusiAwareCNN`'s docstring). This has no baseline
     equivalent, which is exactly why this script is kept separate from the
     controlled comparison.
     """
@@ -71,8 +84,8 @@ def main() -> None:
         default="tusi_aware_cnn",
         choices=["tusi_aware_cnn", "tusi_signal_cnn"],
     )
-    parser.add_argument("--root-dir", default="organized")
-    parser.add_argument("--out-dir", default="runs")
+    parser.add_argument("--root-dir", default=str(DEFAULT_ROOT_DIR))
+    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -116,7 +129,7 @@ def main() -> None:
     logger.info("%s test metrics: %s", args.architecture, metrics)
 
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), out_dir / f"{args.architecture}_model.pt")
     with open(out_dir / f"{args.architecture}_history.json", "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
@@ -126,8 +139,8 @@ def main() -> None:
     print(f"\n=== {args.architecture} test metrics ===")
     print(f"accuracy={metrics['accuracy']:.3f} roc_auc={metrics['roc_auc']:.3f} "
           f"sensitivity={metrics['sensitivity']:.3f} f1={metrics['f1']:.3f}")
-    print("\n(compare against runs/metrics.json's 'tusi' entry — same data, "
-          "plain shared-backbone CNN, no augmentation)")
+    print("\n(compare against mammography/results/metrics.json's 'tusi' entry — "
+          "same data, plain shared-backbone CNN, no augmentation)")
 
 
 if __name__ == "__main__":

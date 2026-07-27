@@ -1,20 +1,25 @@
-"""Training loop for the polyp vs. normal comparison (Kvasir-SEG + HyperKvasir).
+"""Polyp training loop — baseline vs. Tusi-filtered (Kvasir-SEG + HyperKvasir).
 
-Structurally identical to ``train.py``'s baseline-vs-Tusi comparison —
-same model factory, same ``run_epoch``, same optimizer/loss — just pointed
-at ``organized_kvasir/`` instead of ``organized/``. Kept as a separate
-script rather than folding into ``train.py`` because the dataset loading
-differs (plain ``ImageFolder`` here, no CSV-driven centroid lookup needed
-since ``organize_kvasir_dataset.py`` already did that once).
+Structurally identical to ``mammography/train.py``'s baseline-vs-Tusi
+comparison — same model factory, same ``run_epoch``, same optimizer/loss —
+just pointed at ``polyp/dataset/`` instead. Kept as a separate script
+rather than sharing one train.py because the dataset loading differs
+(plain ``ImageFolder`` here, no CSV-driven centroid lookup needed since
+``organize_dataset.py`` already did that once).
 
 ``ImageFolder`` assigns classes alphabetically: ``normal`` = 0, ``polyp``
 = 1, matching the "1 = the finding of interest" convention used for
 malignant=1 in the mammography experiment.
+
+Run from the repo root:
+
+    python polyp/train.py --epochs 20
 """
 
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
 
 import torch
@@ -22,12 +27,18 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
-from dataset import default_transform, tusi_transform
-from models import create_model
-from train import BRANCHES, get_device, run_epoch
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.dataset import default_transform, tusi_transform
+from core.models import create_model
+from core.training import BRANCHES, get_device, run_epoch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+THIS_DIR = Path(__file__).resolve().parent
+DEFAULT_ROOT_DIR = THIS_DIR / "dataset"
+DEFAULT_OUT_DIR = THIS_DIR / "results"
 
 
 def build_datasets(branch: str, root_dir: str) -> tuple[datasets.ImageFolder, datasets.ImageFolder]:
@@ -36,7 +47,7 @@ def build_datasets(branch: str, root_dir: str) -> tuple[datasets.ImageFolder, da
     Args:
         branch: ``"baseline"`` or ``"tusi"`` — selects the input transform.
         root_dir: root of the organized dataset (see
-            ``organize_kvasir_dataset.py``).
+            ``organize_dataset.py``).
 
     Returns:
         ``(train_dataset, test_dataset)``.
@@ -50,16 +61,16 @@ def build_datasets(branch: str, root_dir: str) -> tuple[datasets.ImageFolder, da
 
 def run_training(
     branch: str,
-    root_dir: str = "organized_kvasir",
+    root_dir: str = str(DEFAULT_ROOT_DIR),
     epochs: int = 20,
     batch_size: int = 16,
     lr: float = 1e-3,
     seed: int = 0,
 ) -> tuple[nn.Module, list[dict]]:
-    """Train one branch (baseline or Tusi) end to end on the Kvasir data.
+    """Train one branch (baseline or Tusi) end to end on the polyp data.
 
-    Mirrors ``train.run_training`` exactly, just with this module's
-    ``build_datasets``. See that function for parameter details.
+    Mirrors ``mammography.train.run_training`` exactly, just with this
+    module's ``build_datasets``. See that function for parameter details.
     """
     if branch not in BRANCHES:
         raise ValueError(f"branch must be one of {BRANCHES}, got {branch!r}")
@@ -98,8 +109,8 @@ def run_training(
 def main() -> None:
     """CLI entry point: train one or both branches with identical hyperparameters."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root-dir", default="organized_kvasir")
-    parser.add_argument("--out-dir", default="runs_kvasir")
+    parser.add_argument("--root-dir", default=str(DEFAULT_ROOT_DIR))
+    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -111,7 +122,7 @@ def main() -> None:
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     branches = [args.branch] if args.branch else list(BRANCHES)
     for branch in branches:

@@ -15,10 +15,12 @@ The mask's only job is to locate the crop center (its centroid). It is not
 saved anywhere and is never touched again after that: the CNN downstream
 only ever sees the cropped mammogram tissue itself, never the mask.
 
-This is a standard ``torchvision.datasets.ImageFolder`` layout.
-Run this once before using ``dataset.CBISDDSMDataset``:
+This is a standard ``torchvision.datasets.ImageFolder`` layout, and its
+output already lives at ``mammography/dataset/`` in this repo — you only
+need to run this again if you want to rebuild it from the raw CBIS-DDSM
+download (see the repo README for where to get it):
 
-    python organize_dataset.py --raw-dir data --out-dir organized
+    python mammography/organize_dataset.py --raw-dir mammography/raw_data --out-dir mammography/dataset
 """
 
 import argparse
@@ -33,6 +35,7 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+THIS_DIR = Path(__file__).resolve().parent
 CROP_SIZE = 224
 BENIGN_LABELS = {"BENIGN", "BENIGN_WITHOUT_CALLBACK"}
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9_-]")
@@ -201,8 +204,8 @@ def organize_split(raw_dir: Path, out_dir: Path, split: str, crop_size: int) -> 
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw-dir", default="data", help="extracted CBIS-DDSM root")
-    parser.add_argument("--out-dir", default="organized", help="output root")
+    parser.add_argument("--raw-dir", default=str(THIS_DIR / "raw_data"), help="extracted CBIS-DDSM root")
+    parser.add_argument("--out-dir", default=str(THIS_DIR / "dataset"), help="output root")
     parser.add_argument("--crop-size", type=int, default=CROP_SIZE)
     args = parser.parse_args()
 

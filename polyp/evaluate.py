@@ -1,18 +1,26 @@
-"""Metrics and plots for the polyp vs. normal comparison.
+"""Polyp evaluation — metrics and plots, baseline vs. Tusi.
 
-Mirrors ``evaluate.py`` exactly, pointed at ``runs_kvasir/`` and
-``organized_kvasir/`` instead of the mammography artifacts — reuses all
-the same metric/plot functions rather than redefining them.
+Loads the trained model weights and per-epoch history that
+``polyp/train.py`` saves to ``polyp/results/``, computes held-out
+test-set metrics for each branch, and produces side-by-side
+training-curve and ROC-curve plots.
+
+Run from the repo root:
+
+    python polyp/evaluate.py
 """
 
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
 
 from torch.utils.data import DataLoader
 
-from evaluate import (
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from core.evaluation import (
     collect_predictions,
     compute_metrics,
     load_history,
@@ -20,8 +28,8 @@ from evaluate import (
     plot_roc_curves,
     plot_training_curves,
 )
-from train import BRANCHES, get_device
-from train_kvasir import build_datasets
+from core.training import BRANCHES, get_device
+from polyp.train import DEFAULT_OUT_DIR, DEFAULT_ROOT_DIR, build_datasets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,8 +38,8 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     """CLI entry point: evaluate both branches and produce comparison plots."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root-dir", default="organized_kvasir")
-    parser.add_argument("--run-dir", default="runs_kvasir")
+    parser.add_argument("--root-dir", default=str(DEFAULT_ROOT_DIR))
+    parser.add_argument("--run-dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--batch-size", type=int, default=16)
     args = parser.parse_args()
 
@@ -57,7 +65,7 @@ def main() -> None:
     plot_training_curves(histories, run_dir / "training_curves.png")
     plot_roc_curves(predictions, run_dir / "roc_curves.png")
 
-    print("\n=== Test set metrics (polyp vs. normal) ===")
+    print("\n=== Polyp detection test set metrics ===")
     for branch, m in metrics.items():
         print(f"{branch}: accuracy={m['accuracy']:.3f} roc_auc={m['roc_auc']:.3f} "
               f"sensitivity={m['sensitivity']:.3f} f1={m['f1']:.3f}")

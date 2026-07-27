@@ -45,6 +45,12 @@ Output layout (standard ``ImageFolder``), all images ``FINAL_SIZE`` x
 
 No official train/test split ships with either source here (unlike
 CBIS-DDSM), so this script makes its own random split with a fixed seed.
+
+Its output already lives at ``polyp/dataset/`` in this repo — you only need
+to run this again if you want to rebuild it from the raw Kvasir-SEG /
+HyperKvasir downloads (see the repo README for where to get them):
+
+    python polyp/organize_dataset.py --kvasir-seg-dir polyp/raw_data/Kvasir-SEG --normal-dir polyp/raw_data/hyperkvasir_normal --out-dir polyp/dataset
 """
 
 import argparse
@@ -58,6 +64,7 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+THIS_DIR = Path(__file__).resolve().parent
 FINAL_SIZE = 224
 BBOX_MARGIN = 1.6
 MIN_CROP = 64
@@ -222,9 +229,9 @@ def organize_normals(normal_dir: Path, out_dir: Path, final_size: int, box_sizes
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kvasir-seg-dir", default="kvasir_data/Kvasir-SEG")
-    parser.add_argument("--normal-dir", default="kvasir_data/hyperkvasir_normal")
-    parser.add_argument("--out-dir", default="organized_kvasir")
+    parser.add_argument("--kvasir-seg-dir", default=str(THIS_DIR / "raw_data" / "Kvasir-SEG"))
+    parser.add_argument("--normal-dir", default=str(THIS_DIR / "raw_data" / "hyperkvasir_normal"))
+    parser.add_argument("--out-dir", default=str(THIS_DIR / "dataset"))
     parser.add_argument("--final-size", type=int, default=FINAL_SIZE)
     args = parser.parse_args()
 
