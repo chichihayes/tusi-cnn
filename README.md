@@ -167,6 +167,12 @@ python polyp/explore_architectures.py --architecture tusi_signal_cnn --out-dir p
 python polyp/explore_architectures.py --architecture tusi_aware_cnn --out-dir polyp/results/exploratory/aware
 ```
 
+**To regenerate the materialized Tusi-transformed dataset** (`polyp/dataset_signal/`
+— optional, already committed, only needed if you change `n_angles`/`n_radial`):
+```bash
+python core/build_tusi_signal_dataset.py --root-dir polyp/dataset --out-dir polyp/dataset_signal
+```
+
 ## Reproducing from raw data (optional)
 
 The committed `dataset/` folder in each pipeline already contains everything
