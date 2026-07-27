@@ -13,3 +13,7 @@ __pycache__/
 
 # Local tool config, not part of the project
 .claude/
+
+# Internal development/process notes — kept locally, not published
+CLAUDE.md
+RESEARCH_PAPER_PREP.md
