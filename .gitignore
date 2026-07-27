@@ -1,0 +1,15 @@
+# Raw source datasets (too large for git; see README for download + how to
+# regenerate organized/ and organized_kvasir/ from scratch if ever needed —
+# the processed crops that actually produced our results ARE committed)
+archive (4).zip
+kvasir-seg.zip
+data/
+kvasir_data/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Local tool config, not part of the project
+.claude/
