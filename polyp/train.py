@@ -59,18 +59,35 @@ def build_datasets(branch: str, root_dir: str) -> tuple[datasets.ImageFolder, da
     return train_ds, test_ds
 
 
-def run_training(
+def train_on_datasets(
     branch: str,
-    root_dir: str = str(DEFAULT_ROOT_DIR),
+    train_ds,
+    test_ds,
     epochs: int = 20,
     batch_size: int = 16,
     lr: float = 1e-3,
     seed: int = 0,
 ) -> tuple[nn.Module, list[dict]]:
-    """Train one branch (baseline or Tusi) end to end on the polyp data.
+    """Train one branch end to end given already-built train/test datasets.
 
-    Mirrors ``mammography.train.run_training`` exactly, just with this
-    module's ``build_datasets``. See that function for parameter details.
+    Factored out of :func:`run_training` so callers that need a non-standard
+    split (e.g. ``polyp/cross_validate.py``'s stratified folds, which pool
+    and re-split ``dataset/train`` + ``dataset/test`` rather than using the
+    fixed split) can reuse the exact same training procedure without going
+    through ``build_datasets``.
+
+    Args:
+        branch: ``"baseline"`` or ``"tusi"`` — used only for logging here;
+            the datasets must already reflect the right transform.
+        train_ds: training dataset yielding ``(image_tensor, label)``.
+        test_ds: held-out dataset yielding ``(image_tensor, label)``.
+        epochs: number of training epochs.
+        batch_size: batch size for both loaders.
+        lr: Adam learning rate.
+        seed: seed for model weight initialization.
+
+    Returns:
+        ``(trained_model, per_epoch_history)``.
     """
     if branch not in BRANCHES:
         raise ValueError(f"branch must be one of {BRANCHES}, got {branch!r}")
@@ -78,7 +95,6 @@ def run_training(
     device = get_device()
     logger.info("branch=%s device=%s", branch, device)
 
-    train_ds, test_ds = build_datasets(branch, root_dir)
     logger.info("train=%d test=%d", len(train_ds), len(test_ds))
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
@@ -104,6 +120,25 @@ def run_training(
         })
 
     return model, history
+
+
+def run_training(
+    branch: str,
+    root_dir: str = str(DEFAULT_ROOT_DIR),
+    epochs: int = 20,
+    batch_size: int = 16,
+    lr: float = 1e-3,
+    seed: int = 0,
+) -> tuple[nn.Module, list[dict]]:
+    """Train one branch (baseline or Tusi) end to end on the polyp data.
+
+    Mirrors ``mammography.train.run_training`` exactly, just with this
+    module's ``build_datasets``. See that function for parameter details.
+    """
+    train_ds, test_ds = build_datasets(branch, root_dir)
+    return train_on_datasets(
+        branch, train_ds, test_ds, epochs=epochs, batch_size=batch_size, lr=lr, seed=seed
+    )
 
 
 def main() -> None:

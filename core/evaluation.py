@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from sklearn.metrics import f1_score, recall_score, roc_auc_score, roc_curve
 from torch.utils.data import DataLoader
@@ -113,6 +114,44 @@ def plot_training_curves(histories: dict[str, list[dict]], out_path: Path) -> No
     fig.savefig(out_path)
     plt.close(fig)
     logger.info("saved training curves to %s", out_path)
+
+
+def plot_cv_fold_aucs(fold_aucs: dict[str, list[float]], out_path: Path) -> None:
+    """Plot per-fold ROC-AUC as grouped bars, baseline vs. Tusi.
+
+    Args:
+        fold_aucs: mapping ``branch -> [auc_fold_1, auc_fold_2, ...]``, same
+            branch/color convention as :func:`plot_training_curves`.
+        out_path: file to save the figure to.
+    """
+    colors = {"baseline": "tab:blue", "tusi": "tab:orange"}
+    branches = list(fold_aucs.keys())
+    n_folds = len(next(iter(fold_aucs.values())))
+    fold_idx = np.arange(1, n_folds + 1)
+    bar_width = 0.35
+    offsets = np.linspace(-bar_width / 2, bar_width / 2, len(branches)) if len(branches) > 1 else [0]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for branch, offset in zip(branches, offsets):
+        aucs = fold_aucs[branch]
+        bars = ax.bar(
+            fold_idx + offset, aucs, width=bar_width / len(branches) * 1.8,
+            color=colors.get(branch), label=f"{branch} (mean={np.mean(aucs):.3f})",
+        )
+        ax.bar_label(bars, fmt="%.3f", padding=2, fontsize=8)
+
+    ax.set_xticks(fold_idx)
+    ax.set_xticklabels([f"fold {i}" for i in fold_idx])
+    ax.set_ylabel("ROC-AUC")
+    ax.set_ylim(0, 1.05)
+    ax.set_title("Per-fold ROC-AUC: baseline vs. Tusi")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
+    logger.info("saved CV fold-AUC plot to %s", out_path)
 
 
 def plot_roc_curves(predictions: dict[str, tuple[list[float], list[int]]], out_path: Path) -> None:

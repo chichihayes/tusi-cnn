@@ -189,6 +189,38 @@ class SyntheticLumpDataset(Dataset):
         return image_tensor, label
 
 
+class PathListDataset(Dataset):
+    """Dataset over an explicit ``(path, label)`` list, for custom re-splits.
+
+    ``ImageFolder`` always reads its split from a fixed directory. Cross-
+    validation needs to pool samples from multiple directories (e.g. an
+    existing ``train/`` + ``test/`` split) and re-partition them into folds,
+    so this wraps a plain list of ``(path, label)`` pairs — typically built
+    from one or more ``ImageFolder(...).samples`` lists concatenated
+    together — behind the same ``(image_tensor, label)`` interface.
+    """
+
+    def __init__(self, samples: list[tuple[str, int]], transform: Transform) -> None:
+        """Wrap an explicit sample list.
+
+        Args:
+            samples: list of ``(image_path, label)`` pairs.
+            transform: transform applied to each loaded image.
+        """
+        self.samples = samples
+        self.transform = transform
+
+    def __len__(self) -> int:
+        """Return the number of samples."""
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
+        """Return the ``(image_tensor, label)`` pair at ``idx``."""
+        path, label = self.samples[idx]
+        image = Image.open(path).convert("RGB")
+        return self.transform(image), label
+
+
 class CBISDDSMDataset(Dataset):
     """Real mammography dataset built from the CBIS-DDSM mass subset.
 
